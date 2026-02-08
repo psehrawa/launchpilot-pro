@@ -28,6 +28,7 @@ import {
   Search,
   Bell,
   HelpCircle,
+  BookTemplate,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { createClient } from "@/lib/supabase/client";
@@ -37,6 +38,7 @@ const navigation = [
   { name: "Discover", href: "/dashboard/discover", icon: Search },
   { name: "Contacts", href: "/dashboard/contacts", icon: Users },
   { name: "Campaigns", href: "/dashboard/campaigns", icon: Send },
+  { name: "Templates", href: "/dashboard/templates", icon: FileText },
   { name: "Analytics", href: "/dashboard/analytics", icon: BarChart3 },
 ];
 
