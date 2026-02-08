@@ -39,6 +39,8 @@ import {
   Twitter,
   Mail,
   ExternalLink,
+  Zap,
+  RefreshCw,
 } from "lucide-react";
 import { useContacts } from "@/lib/hooks/use-contacts";
 import { useToast } from "@/hooks/use-toast";
@@ -58,13 +60,14 @@ interface Lead {
 }
 
 export default function DiscoverPage() {
-  const { addContact } = useContacts();
+  const { addContact, refresh: refreshContacts } = useContacts();
   const { toast } = useToast();
   
   const [loading, setLoading] = useState(false);
   const [leads, setLeads] = useState<Lead[]>([]);
   const [selectedLeads, setSelectedLeads] = useState<string[]>([]);
   const [isImporting, setIsImporting] = useState(false);
+  const [isAutoDiscovering, setIsAutoDiscovering] = useState(false);
   const [activeSource, setActiveSource] = useState("domain");
   
   // Search states
@@ -315,6 +318,38 @@ export default function DiscoverPage() {
     }
   };
 
+  const handleAutoDiscover = async () => {
+    setIsAutoDiscovering(true);
+    
+    try {
+      const res = await fetch("/api/discover/auto", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          sources: ["hackernews", "reddit"],
+          limit: 30,
+          auto_enrich: true,
+        }),
+      });
+
+      const data = await res.json();
+
+      if (data.error) {
+        toast({ title: "Error", description: data.error, variant: "destructive" });
+      } else {
+        toast({ 
+          title: "Auto-Discovery Complete!", 
+          description: `Found ${data.found} leads, added ${data.inserted} new contacts` 
+        });
+        refreshContacts();
+      }
+    } catch (err) {
+      toast({ title: "Error", description: "Failed to auto-discover", variant: "destructive" });
+    } finally {
+      setIsAutoDiscovering(false);
+    }
+  };
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
@@ -322,8 +357,21 @@ export default function DiscoverPage() {
           <h1 className="text-2xl font-bold">Discover Leads</h1>
           <p className="text-slate-500">Find prospects from multiple sources</p>
         </div>
-        {leads.length > 0 && (
-          <div className="flex gap-2">
+        <div className="flex gap-2">
+          <Button onClick={handleAutoDiscover} disabled={isAutoDiscovering} className="bg-gradient-to-r from-purple-600 to-blue-600">
+            {isAutoDiscovering ? (
+              <Loader2 className="h-4 w-4 animate-spin mr-2" />
+            ) : (
+              <Zap className="h-4 w-4 mr-2" />
+            )}
+            Auto-Discover Now
+          </Button>
+        </div>
+      </div>
+      
+      {/* Manual search results actions */}
+      {leads.length > 0 && (
+        <div className="flex gap-2 justify-end">
             <Button variant="outline" onClick={handleExportCSV}>
               <Download className="h-4 w-4 mr-2" />
               Export CSV
