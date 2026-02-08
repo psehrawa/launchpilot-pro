@@ -54,6 +54,11 @@ async function findEmailHunter(
     const res = await fetch(url.toString());
     const data = await res.json();
 
+    // Check for API errors
+    if (data.errors) {
+      return { success: false, error: data.errors[0]?.details || "Hunter API error", source: "hunter" };
+    }
+
     if (data.data?.emails?.length > 0) {
       const emails = data.data.emails.map((e: { value: string }) => e.value);
       return {
@@ -64,7 +69,7 @@ async function findEmailHunter(
       };
     }
 
-    return { success: false, error: "No emails found", source: "hunter" };
+    return { success: false, error: `No emails found for ${domain}`, source: "hunter" };
   } catch (error) {
     return { success: false, error: String(error), source: "hunter" };
   }
@@ -181,22 +186,22 @@ export async function POST(request: NextRequest) {
     // 1. Try Hunter first
     result = await findEmailHunter(domain, firstName, lastName);
     if (result.success && result.email) {
-      // Verify the found email
-      const verification = await verifyEmailClearout(result.email);
-      return NextResponse.json({
-        ...result,
-        verified: verification.verified,
-      });
+      // Only verify if Clearout is configured
+      if (process.env.CLEAROUT_API_KEY) {
+        const verification = await verifyEmailClearout(result.email);
+        result.verified = verification.verified;
+      }
+      return NextResponse.json(result);
     }
 
     // 2. Try Snov.io
     result = await findEmailSnov(domain);
     if (result.success && result.email) {
-      const verification = await verifyEmailClearout(result.email);
-      return NextResponse.json({
-        ...result,
-        verified: verification.verified,
-      });
+      if (process.env.CLEAROUT_API_KEY) {
+        const verification = await verifyEmailClearout(result.email);
+        result.verified = verification.verified;
+      }
+      return NextResponse.json(result);
     }
 
     return NextResponse.json({
