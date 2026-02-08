@@ -38,6 +38,7 @@ const navigation = [
   { name: "Discover", href: "/dashboard/discover", icon: Search },
   { name: "Contacts", href: "/dashboard/contacts", icon: Users },
   { name: "Campaigns", href: "/dashboard/campaigns", icon: Send },
+  { name: "Inbox", href: "/dashboard/inbox", icon: Mail },
   { name: "Templates", href: "/dashboard/templates", icon: FileText },
   { name: "Analytics", href: "/dashboard/analytics", icon: BarChart3 },
 ];
