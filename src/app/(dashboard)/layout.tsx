@@ -34,12 +34,10 @@ import { createClient } from "@/lib/supabase/client";
 
 const navigation = [
   { name: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
+  { name: "Find Leads", href: "/dashboard/find-leads", icon: Search },
   { name: "Contacts", href: "/dashboard/contacts", icon: Users },
-  { name: "Companies", href: "/dashboard/companies", icon: Building2 },
   { name: "Campaigns", href: "/dashboard/campaigns", icon: Send },
-  { name: "Emails", href: "/dashboard/emails", icon: Mail },
   { name: "Analytics", href: "/dashboard/analytics", icon: BarChart3 },
-  { name: "Templates", href: "/dashboard/templates", icon: FileText },
 ];
 
 const bottomNav = [
