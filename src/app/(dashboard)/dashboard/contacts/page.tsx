@@ -54,8 +54,10 @@ import {
   Loader2,
   Sparkles,
   AlertCircle,
+  Users,
 } from "lucide-react";
 import { useContacts, Contact } from "@/lib/hooks/use-contacts";
+import { useEnrichment } from "@/lib/hooks/use-enrichment";
 import { useToast } from "@/hooks/use-toast";
 
 const statusConfig: Record<string, { label: string; color: string }> = {
@@ -69,6 +71,7 @@ const statusConfig: Record<string, { label: string; color: string }> = {
 
 export default function ContactsPage() {
   const { contacts, loading, error, addContact, deleteContact, deleteContacts, refresh } = useContacts();
+  const { enrichContact, enrichBatch, loading: enrichLoading } = useEnrichment();
   const { toast } = useToast();
   const fileInputRef = useRef<HTMLInputElement>(null);
   
@@ -80,7 +83,9 @@ export default function ContactsPage() {
   const [enrichDialogOpen, setEnrichDialogOpen] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isEnriching, setIsEnriching] = useState(false);
+  const [isBulkEnriching, setIsBulkEnriching] = useState(false);
   const [importPreview, setImportPreview] = useState<Partial<Contact>[]>([]);
+  const [autoEnrich, setAutoEnrich] = useState(true);
   
   // Form state
   const [newContact, setNewContact] = useState({
@@ -125,8 +130,32 @@ export default function ContactsPage() {
   });
 
   const handleAddContact = async () => {
+    // If no email but we have name + company, try to auto-enrich
+    if (!newContact.email && autoEnrich && newContact.first_name && newContact.last_name && newContact.company) {
+      setIsSubmitting(true);
+      toast({ title: "Finding email...", description: "Auto-enriching contact" });
+      
+      const enrichResult = await enrichContact({
+        first_name: newContact.first_name,
+        last_name: newContact.last_name,
+        company: newContact.company,
+      });
+      
+      if (enrichResult?.email) {
+        newContact.email = enrichResult.email;
+        if (enrichResult.additionalData?.position) {
+          newContact.title = enrichResult.additionalData.position;
+        }
+        toast({ title: "Email found!", description: enrichResult.email });
+      } else {
+        setIsSubmitting(false);
+        toast({ title: "Error", description: "Could not find email. Please enter manually.", variant: "destructive" });
+        return;
+      }
+    }
+    
     if (!newContact.email) {
-      toast({ title: "Error", description: "Email is required", variant: "destructive" });
+      toast({ title: "Error", description: "Email is required (or provide name + company for auto-find)", variant: "destructive" });
       return;
     }
     
@@ -141,6 +170,34 @@ export default function ContactsPage() {
     } else {
       toast({ title: "Error", description: result.error, variant: "destructive" });
     }
+  };
+  
+  const handleBulkEnrich = async () => {
+    const toEnrich = contacts
+      .filter((c) => selectedContacts.includes(c.id))
+      .filter((c) => !c.email_verified && c.first_name && c.last_name && c.company)
+      .map((c) => ({
+        contact_id: c.id,
+        first_name: c.first_name!,
+        last_name: c.last_name!,
+        company: c.company!,
+      }));
+    
+    if (toEnrich.length === 0) {
+      toast({ title: "No contacts to enrich", description: "Select contacts with name + company", variant: "destructive" });
+      return;
+    }
+    
+    setIsBulkEnriching(true);
+    const result = await enrichBatch(toEnrich);
+    setIsBulkEnriching(false);
+    
+    toast({ 
+      title: "Enrichment complete", 
+      description: `Found ${result.success} emails, ${result.failed} failed` 
+    });
+    refresh();
+    setSelectedContacts([]);
   };
 
   const handleDeleteSelected = async () => {
@@ -400,16 +457,26 @@ export default function ContactsPage() {
                   </div>
                 </div>
                 <div className="space-y-2">
-                  <Label>Email *</Label>
+                  <Label>Email {autoEnrich ? "(optional - will auto-find)" : "*"}</Label>
                   <Input
                     type="email"
                     placeholder="john@company.com"
                     value={newContact.email}
                     onChange={(e) => setNewContact((c) => ({ ...c, email: e.target.value }))}
                   />
+                  <label className="flex items-center gap-2 text-sm">
+                    <input
+                      type="checkbox"
+                      checked={autoEnrich}
+                      onChange={(e) => setAutoEnrich(e.target.checked)}
+                      className="rounded"
+                    />
+                    <Sparkles className="h-3 w-3 text-purple-500" />
+                    Auto-find email from name + company
+                  </label>
                 </div>
                 <div className="space-y-2">
-                  <Label>Company</Label>
+                  <Label>Company {autoEnrich && !newContact.email ? "*" : ""}</Label>
                   <Input
                     placeholder="Acme Inc"
                     value={newContact.company}
@@ -522,6 +589,10 @@ export default function ContactsPage() {
             {selectedContacts.length} contact(s) selected
           </span>
           <div className="flex gap-2">
+            <Button size="sm" variant="outline" onClick={handleBulkEnrich} disabled={isBulkEnriching}>
+              {isBulkEnriching ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Sparkles className="h-4 w-4 mr-2" />}
+              Find Emails
+            </Button>
             <Button size="sm" variant="outline">
               <Mail className="h-4 w-4 mr-2" />
               Add to Campaign
