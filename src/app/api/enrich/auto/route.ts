@@ -1,113 +1,134 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
+import { EnrichmentEngine } from "@/lib/enrichment-engine";
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
   process.env.SUPABASE_SERVICE_ROLE_KEY!
 );
 
+// Initialize enrichment engine with all available API keys
+const engine = new EnrichmentEngine({
+  hunterKey: process.env.HUNTER_API_KEY,
+  clearbitKey: process.env.CLEARBIT_API_KEY,
+  snovClientId: process.env.SNOV_CLIENT_ID,
+  snovClientSecret: process.env.SNOV_CLIENT_SECRET,
+});
+
 // Auto-enrich a contact with email and additional data
 export async function POST(request: NextRequest) {
   try {
-    const { contact_id, first_name, last_name, company, domain } = await request.json();
+    const { contact_id, first_name, last_name, company, domain, linkedin_url, twitter } = await request.json();
 
-    if (!first_name || !last_name || (!company && !domain)) {
+    if (!first_name || !last_name) {
       return NextResponse.json({ 
-        error: "Need first_name, last_name, and company or domain" 
+        error: "Need first_name and last_name" 
       }, { status: 400 });
     }
 
-    // Determine domain from company name if not provided
-    let searchDomain = domain;
-    if (!searchDomain && company) {
-      // Try common patterns
-      searchDomain = company
-        .toLowerCase()
-        .replace(/[^a-z0-9]/g, "")
-        .replace(/inc$|llc$|ltd$|corp$/, "") + ".com";
+    if (!company && !domain) {
+      return NextResponse.json({ 
+        error: "Need company or domain" 
+      }, { status: 400 });
     }
 
-    let email = null;
-    let verified = false;
-    let provider = null;
-    let additionalData: any = {};
+    // Use the multi-source enrichment engine
+    const result = await engine.enrich({
+      first_name,
+      last_name,
+      company,
+      domain,
+      linkedin_url,
+      twitter,
+    });
 
-    // 1. Try Hunter.io Email Finder
-    if (process.env.HUNTER_API_KEY && searchDomain) {
-      try {
-        const hunterUrl = `https://api.hunter.io/v2/email-finder?domain=${searchDomain}&first_name=${first_name}&last_name=${last_name}&api_key=${process.env.HUNTER_API_KEY}`;
-        const res = await fetch(hunterUrl);
-        const data = await res.json();
+    // Update contact in database if contact_id provided
+    if (contact_id && result.email) {
+      const updateData: any = {
+        email: result.email,
+        email_verified: result.verified,
+      };
 
-        if (data.data?.email) {
-          email = data.data.email;
-          verified = data.data.score > 80;
-          provider = "hunter";
-          additionalData = {
-            position: data.data.position,
-            linkedin: data.data.linkedin,
-            twitter: data.data.twitter,
-            confidence: data.data.score,
-          };
-        }
-      } catch (err) {
-        console.error("Hunter error:", err);
+      if (result.additionalData?.title) {
+        updateData.title = result.additionalData.title;
       }
-    }
 
-    // 2. Fallback: Try email pattern guessing
-    if (!email && searchDomain) {
-      const patterns = [
-        `${first_name.toLowerCase()}.${last_name.toLowerCase()}@${searchDomain}`,
-        `${first_name.toLowerCase()}${last_name.toLowerCase()}@${searchDomain}`,
-        `${first_name.toLowerCase()[0]}${last_name.toLowerCase()}@${searchDomain}`,
-        `${first_name.toLowerCase()}@${searchDomain}`,
-      ];
-
-      // For now, use the most common pattern
-      email = patterns[0];
-      verified = false;
-      provider = "pattern";
-    }
-
-    // 3. Try to get company info from Clearbit (if available)
-    if (process.env.CLEARBIT_API_KEY && searchDomain) {
-      try {
-        const res = await fetch(`https://company.clearbit.com/v2/companies/find?domain=${searchDomain}`, {
-          headers: { Authorization: `Bearer ${process.env.CLEARBIT_API_KEY}` },
-        });
-
-        if (res.ok) {
-          const company = await res.json();
-          additionalData.companySize = company.metrics?.employees;
-          additionalData.industry = company.category?.industry;
-          additionalData.companyLinkedIn = company.linkedin?.handle;
-        }
-      } catch (err) {
-        // Skip
-      }
-    }
-
-    // 4. Update contact in database if contact_id provided
-    if (contact_id && email) {
       await supabase
         .from("lp_contacts")
-        .update({
-          email,
-          email_verified: verified,
-          title: additionalData.position || undefined,
-        })
+        .update(updateData)
         .eq("id", contact_id);
     }
 
     return NextResponse.json({
       success: true,
-      email,
-      verified,
-      provider,
-      domain: searchDomain,
-      additionalData,
+      email: result.email,
+      verified: result.verified,
+      confidence: result.confidence,
+      source: result.source,
+      additionalData: result.additionalData,
     });
+  } catch (error: any) {
+    console.error("Enrichment error:", error);
+    return NextResponse.json({ error: error.message }, { status: 500 });
+  }
+}
+
+// Bulk enrich multiple contacts
+export async function PUT(request: NextRequest) {
+  try {
+    const { contacts } = await request.json();
+
+    if (!contacts || !Array.isArray(contacts)) {
+      return NextResponse.json({ error: "contacts array required" }, { status: 400 });
+    }
+
+    const results = {
+      success: 0,
+      failed: 0,
+      details: [] as any[],
+    };
+
+    for (const contact of contacts) {
+      try {
+        const result = await engine.enrich({
+          first_name: contact.first_name,
+          last_name: contact.last_name,
+          company: contact.company,
+          domain: contact.domain,
+        });
+
+        if (result.email && result.confidence >= 50) {
+          // Update in database if contact_id provided
+          if (contact.contact_id) {
+            await supabase
+              .from("lp_contacts")
+              .update({
+                email: result.email,
+                email_verified: result.verified,
+                title: result.additionalData?.title,
+              })
+              .eq("id", contact.contact_id);
+          }
+
+          results.success++;
+          results.details.push({
+            name: `${contact.first_name} ${contact.last_name}`,
+            email: result.email,
+            source: result.source,
+            confidence: result.confidence,
+          });
+        } else {
+          results.failed++;
+        }
+
+        // Rate limiting
+        await new Promise(r => setTimeout(r, 300));
+      } catch (e) {
+        results.failed++;
+      }
+    }
+
+    return NextResponse.json(results);
   } catch (error: any) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
