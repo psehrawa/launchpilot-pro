@@ -26,41 +26,33 @@ async function findEmailHunter(
   try {
     // If we have name, use email finder
     if (firstName && lastName) {
-      const url = new URL("https://api.hunter.io/v2/email-finder");
-      url.searchParams.set("domain", domain);
-      url.searchParams.set("first_name", firstName);
-      url.searchParams.set("last_name", lastName);
-      url.searchParams.set("api_key", apiKey);
+      const finderUrl = `https://api.hunter.io/v2/email-finder?domain=${encodeURIComponent(domain)}&first_name=${encodeURIComponent(firstName)}&last_name=${encodeURIComponent(lastName)}&api_key=${apiKey}`;
+      const finderRes = await fetch(finderUrl);
+      const finderData = await finderRes.json();
 
-      const res = await fetch(url.toString());
-      const data = await res.json();
-
-      if (data.data?.email) {
+      if (finderData.data?.email) {
         return {
           success: true,
-          email: data.data.email,
-          confidence: data.data.score,
-          verified: data.data.verification?.status === "valid",
+          email: finderData.data.email,
+          confidence: finderData.data.score,
+          verified: finderData.data.verification?.status === "valid",
           source: "hunter",
         };
       }
     }
 
-    // Otherwise, domain search
-    const url = new URL("https://api.hunter.io/v2/domain-search");
-    url.searchParams.set("domain", domain);
-    url.searchParams.set("api_key", apiKey);
-
-    const res = await fetch(url.toString());
-    const data = await res.json();
+    // Domain search
+    const searchUrl = `https://api.hunter.io/v2/domain-search?domain=${encodeURIComponent(domain)}&api_key=${apiKey}`;
+    const searchRes = await fetch(searchUrl);
+    const searchData = await searchRes.json();
 
     // Check for API errors
-    if (data.errors) {
-      return { success: false, error: data.errors[0]?.details || "Hunter API error", source: "hunter" };
+    if (searchData.errors) {
+      return { success: false, error: searchData.errors[0]?.details || "Hunter API error", source: "hunter" };
     }
 
-    if (data.data?.emails?.length > 0) {
-      const emails = data.data.emails.map((e: { value: string }) => e.value);
+    if (searchData.data?.emails && searchData.data.emails.length > 0) {
+      const emails = searchData.data.emails.map((e: { value: string }) => e.value);
       return {
         success: true,
         emails,
