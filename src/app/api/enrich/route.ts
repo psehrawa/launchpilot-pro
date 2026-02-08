@@ -165,7 +165,15 @@ async function verifyEmailClearout(email: string): Promise<EnrichmentResult> {
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { domain, firstName, lastName, email, action = "find" } = body;
+    const { domain, firstName, lastName, email, action = "find", debug } = body;
+    
+    // Debug mode
+    if (debug) {
+      return NextResponse.json({
+        hunterKey: process.env.HUNTER_API_KEY ? "configured" : "missing",
+        domain,
+      });
+    }
 
     if (action === "verify" && email) {
       // Verify existing email
@@ -185,6 +193,7 @@ export async function POST(request: NextRequest) {
 
     // 1. Try Hunter first
     result = await findEmailHunter(domain, firstName, lastName);
+    console.log("Hunter result:", JSON.stringify(result));
     if (result.success && result.email) {
       // Only verify if Clearout is configured
       if (process.env.CLEAROUT_API_KEY) {
