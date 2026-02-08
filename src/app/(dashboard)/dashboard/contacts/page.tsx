@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useRef } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
@@ -27,6 +27,7 @@ import {
   DialogHeader,
   DialogTitle,
   DialogTrigger,
+  DialogFooter,
 } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
 import {
@@ -50,73 +51,14 @@ import {
   XCircle,
   Clock,
   Building2,
+  Loader2,
+  Sparkles,
+  AlertCircle,
 } from "lucide-react";
+import { useContacts, Contact } from "@/lib/hooks/use-contacts";
+import { useToast } from "@/hooks/use-toast";
 
-// Mock data
-const contacts = [
-  {
-    id: "1",
-    firstName: "Sarah",
-    lastName: "Chen",
-    email: "sarah@techstartup.com",
-    company: "TechStartup Inc",
-    title: "CEO",
-    status: "replied",
-    emailVerified: true,
-    tags: ["hot-lead", "decision-maker"],
-    lastContacted: "2 days ago",
-  },
-  {
-    id: "2",
-    firstName: "Mike",
-    lastName: "Johnson",
-    email: "mike@acme.co",
-    company: "Acme Corp",
-    title: "VP Sales",
-    status: "contacted",
-    emailVerified: true,
-    tags: ["enterprise"],
-    lastContacted: "1 week ago",
-  },
-  {
-    id: "3",
-    firstName: "Priya",
-    lastName: "Sharma",
-    email: "priya@saasco.com",
-    company: "SaaS Co",
-    title: "Head of Growth",
-    status: "meeting",
-    emailVerified: true,
-    tags: ["hot-lead", "saas"],
-    lastContacted: "3 days ago",
-  },
-  {
-    id: "4",
-    firstName: "John",
-    lastName: "Doe",
-    email: "john@startup.io",
-    company: "Startup.io",
-    title: "Founder",
-    status: "new",
-    emailVerified: false,
-    tags: ["startup"],
-    lastContacted: null,
-  },
-  {
-    id: "5",
-    firstName: "Emily",
-    lastName: "Williams",
-    email: "emily@bigco.com",
-    company: "Big Co",
-    title: "Marketing Director",
-    status: "lost",
-    emailVerified: true,
-    tags: ["enterprise", "marketing"],
-    lastContacted: "2 weeks ago",
-  },
-];
-
-const statusConfig = {
+const statusConfig: Record<string, { label: string; color: string }> = {
   new: { label: "New", color: "bg-slate-100 text-slate-700" },
   contacted: { label: "Contacted", color: "bg-blue-100 text-blue-700" },
   replied: { label: "Replied", color: "bg-green-100 text-green-700" },
@@ -126,8 +68,35 @@ const statusConfig = {
 };
 
 export default function ContactsPage() {
+  const { contacts, loading, error, addContact, deleteContact, deleteContacts, refresh } = useContacts();
+  const { toast } = useToast();
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  
   const [selectedContacts, setSelectedContacts] = useState<string[]>([]);
   const [searchQuery, setSearchQuery] = useState("");
+  const [statusFilter, setStatusFilter] = useState("all");
+  const [addDialogOpen, setAddDialogOpen] = useState(false);
+  const [importDialogOpen, setImportDialogOpen] = useState(false);
+  const [enrichDialogOpen, setEnrichDialogOpen] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isEnriching, setIsEnriching] = useState(false);
+  const [importPreview, setImportPreview] = useState<Partial<Contact>[]>([]);
+  
+  // Form state
+  const [newContact, setNewContact] = useState({
+    first_name: "",
+    last_name: "",
+    email: "",
+    company: "",
+    title: "",
+  });
+  
+  // Enrich form state
+  const [enrichForm, setEnrichForm] = useState({
+    first_name: "",
+    last_name: "",
+    domain: "",
+  });
 
   const toggleContact = (id: string) => {
     setSelectedContacts((prev) =>
@@ -136,20 +105,187 @@ export default function ContactsPage() {
   };
 
   const toggleAll = () => {
-    if (selectedContacts.length === contacts.length) {
+    if (selectedContacts.length === filteredContacts.length) {
       setSelectedContacts([]);
     } else {
-      setSelectedContacts(contacts.map((c) => c.id));
+      setSelectedContacts(filteredContacts.map((c) => c.id));
     }
   };
 
-  const filteredContacts = contacts.filter(
-    (contact) =>
-      contact.firstName.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      contact.lastName.toLowerCase().includes(searchQuery.toLowerCase()) ||
+  const filteredContacts = contacts.filter((contact) => {
+    const matchesSearch =
+      (contact.first_name?.toLowerCase() || "").includes(searchQuery.toLowerCase()) ||
+      (contact.last_name?.toLowerCase() || "").includes(searchQuery.toLowerCase()) ||
       contact.email.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      contact.company.toLowerCase().includes(searchQuery.toLowerCase())
-  );
+      (contact.company?.toLowerCase() || "").includes(searchQuery.toLowerCase());
+    
+    const matchesStatus = statusFilter === "all" || contact.status === statusFilter;
+    
+    return matchesSearch && matchesStatus;
+  });
+
+  const handleAddContact = async () => {
+    if (!newContact.email) {
+      toast({ title: "Error", description: "Email is required", variant: "destructive" });
+      return;
+    }
+    
+    setIsSubmitting(true);
+    const result = await addContact(newContact);
+    setIsSubmitting(false);
+    
+    if (result.success) {
+      toast({ title: "Success", description: "Contact added successfully" });
+      setAddDialogOpen(false);
+      setNewContact({ first_name: "", last_name: "", email: "", company: "", title: "" });
+    } else {
+      toast({ title: "Error", description: result.error, variant: "destructive" });
+    }
+  };
+
+  const handleDeleteSelected = async () => {
+    if (selectedContacts.length === 0) return;
+    
+    const result = await deleteContacts(selectedContacts);
+    if (result.success) {
+      toast({ title: "Success", description: `Deleted ${selectedContacts.length} contact(s)` });
+      setSelectedContacts([]);
+    } else {
+      toast({ title: "Error", description: result.error, variant: "destructive" });
+    }
+  };
+
+  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      const text = event.target?.result as string;
+      const lines = text.split("\n").filter(Boolean);
+      const headers = lines[0].split(",").map((h) => h.trim().toLowerCase());
+      
+      const parsed: Partial<Contact>[] = [];
+      for (let i = 1; i < lines.length; i++) {
+        const values = lines[i].split(",").map((v) => v.trim());
+        const contact: Partial<Contact> = { status: "new", tags: [], email_verified: false };
+        
+        headers.forEach((header, idx) => {
+          const value = values[idx];
+          if (header === "email") contact.email = value;
+          else if (header === "first_name" || header === "firstname" || header === "first name") contact.first_name = value;
+          else if (header === "last_name" || header === "lastname" || header === "last name") contact.last_name = value;
+          else if (header === "company") contact.company = value;
+          else if (header === "title" || header === "job_title" || header === "job title") contact.title = value;
+        });
+        
+        if (contact.email) parsed.push(contact);
+      }
+      
+      setImportPreview(parsed);
+      setImportDialogOpen(true);
+    };
+    reader.readAsText(file);
+    
+    // Reset file input
+    if (fileInputRef.current) fileInputRef.current.value = "";
+  };
+
+  const handleImportConfirm = async () => {
+    setIsSubmitting(true);
+    let successCount = 0;
+    
+    for (const contact of importPreview) {
+      const result = await addContact(contact);
+      if (result.success) successCount++;
+    }
+    
+    setIsSubmitting(false);
+    toast({ title: "Import Complete", description: `Imported ${successCount} of ${importPreview.length} contacts` });
+    setImportDialogOpen(false);
+    setImportPreview([]);
+  };
+
+  const handleEnrichEmail = async () => {
+    if (!enrichForm.first_name || !enrichForm.last_name || !enrichForm.domain) {
+      toast({ title: "Error", description: "All fields are required", variant: "destructive" });
+      return;
+    }
+    
+    setIsEnriching(true);
+    try {
+      const res = await fetch("/api/enrich", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          first_name: enrichForm.first_name,
+          last_name: enrichForm.last_name,
+          domain: enrichForm.domain,
+        }),
+      });
+      
+      const data = await res.json();
+      
+      if (data.email) {
+        // Add the found contact
+        await addContact({
+          email: data.email,
+          first_name: enrichForm.first_name,
+          last_name: enrichForm.last_name,
+          company: enrichForm.domain,
+          email_verified: data.verified || false,
+        });
+        
+        toast({ title: "Email Found!", description: `Found: ${data.email}` });
+        setEnrichDialogOpen(false);
+        setEnrichForm({ first_name: "", last_name: "", domain: "" });
+      } else {
+        toast({ title: "Not Found", description: "Could not find email for this person", variant: "destructive" });
+      }
+    } catch (err) {
+      toast({ title: "Error", description: "Failed to enrich contact", variant: "destructive" });
+    } finally {
+      setIsEnriching(false);
+    }
+  };
+
+  const handleExport = () => {
+    const headers = ["email", "first_name", "last_name", "company", "title", "status"];
+    const rows = filteredContacts.map((c) => [
+      c.email,
+      c.first_name || "",
+      c.last_name || "",
+      c.company || "",
+      c.title || "",
+      c.status,
+    ]);
+    
+    const csv = [headers.join(","), ...rows.map((r) => r.join(","))].join("\n");
+    const blob = new Blob([csv], { type: "text/csv" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "contacts.csv";
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center h-64">
+        <Loader2 className="h-8 w-8 animate-spin text-blue-600" />
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="flex items-center justify-center h-64 text-red-600">
+        <AlertCircle className="h-6 w-6 mr-2" />
+        Error loading contacts: {error}
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6">
@@ -160,15 +296,79 @@ export default function ContactsPage() {
           <p className="text-slate-500">{contacts.length} total contacts</p>
         </div>
         <div className="flex gap-3">
-          <Button variant="outline">
+          <input
+            type="file"
+            accept=".csv"
+            ref={fileInputRef}
+            onChange={handleFileUpload}
+            className="hidden"
+          />
+          <Button variant="outline" onClick={() => fileInputRef.current?.click()}>
             <Upload className="h-4 w-4 mr-2" />
-            Import
+            Import CSV
           </Button>
-          <Button variant="outline">
+          <Button variant="outline" onClick={handleExport}>
             <Download className="h-4 w-4 mr-2" />
             Export
           </Button>
-          <Dialog>
+          
+          {/* Find Email Dialog */}
+          <Dialog open={enrichDialogOpen} onOpenChange={setEnrichDialogOpen}>
+            <DialogTrigger asChild>
+              <Button variant="outline">
+                <Sparkles className="h-4 w-4 mr-2" />
+                Find Email
+              </Button>
+            </DialogTrigger>
+            <DialogContent>
+              <DialogHeader>
+                <DialogTitle>Find Email Address</DialogTitle>
+                <DialogDescription>
+                  Enter a name and company domain to find their email
+                </DialogDescription>
+              </DialogHeader>
+              <div className="grid gap-4 py-4">
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label>First Name</Label>
+                    <Input
+                      placeholder="John"
+                      value={enrichForm.first_name}
+                      onChange={(e) => setEnrichForm((f) => ({ ...f, first_name: e.target.value }))}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Last Name</Label>
+                    <Input
+                      placeholder="Doe"
+                      value={enrichForm.last_name}
+                      onChange={(e) => setEnrichForm((f) => ({ ...f, last_name: e.target.value }))}
+                    />
+                  </div>
+                </div>
+                <div className="space-y-2">
+                  <Label>Company Domain</Label>
+                  <Input
+                    placeholder="acme.com"
+                    value={enrichForm.domain}
+                    onChange={(e) => setEnrichForm((f) => ({ ...f, domain: e.target.value }))}
+                  />
+                </div>
+              </div>
+              <DialogFooter>
+                <Button variant="outline" onClick={() => setEnrichDialogOpen(false)}>
+                  Cancel
+                </Button>
+                <Button onClick={handleEnrichEmail} disabled={isEnriching}>
+                  {isEnriching ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Sparkles className="h-4 w-4 mr-2" />}
+                  Find Email
+                </Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
+          
+          {/* Add Contact Dialog */}
+          <Dialog open={addDialogOpen} onOpenChange={setAddDialogOpen}>
             <DialogTrigger asChild>
               <Button>
                 <Plus className="h-4 w-4 mr-2" />
@@ -178,42 +378,112 @@ export default function ContactsPage() {
             <DialogContent>
               <DialogHeader>
                 <DialogTitle>Add New Contact</DialogTitle>
-                <DialogDescription>
-                  Add a new contact to your database
-                </DialogDescription>
+                <DialogDescription>Add a new contact to your database</DialogDescription>
               </DialogHeader>
               <div className="grid gap-4 py-4">
                 <div className="grid grid-cols-2 gap-4">
                   <div className="space-y-2">
-                    <Label htmlFor="firstName">First name</Label>
-                    <Input id="firstName" placeholder="John" />
+                    <Label>First name</Label>
+                    <Input
+                      placeholder="John"
+                      value={newContact.first_name}
+                      onChange={(e) => setNewContact((c) => ({ ...c, first_name: e.target.value }))}
+                    />
                   </div>
                   <div className="space-y-2">
-                    <Label htmlFor="lastName">Last name</Label>
-                    <Input id="lastName" placeholder="Doe" />
+                    <Label>Last name</Label>
+                    <Input
+                      placeholder="Doe"
+                      value={newContact.last_name}
+                      onChange={(e) => setNewContact((c) => ({ ...c, last_name: e.target.value }))}
+                    />
                   </div>
                 </div>
                 <div className="space-y-2">
-                  <Label htmlFor="email">Email</Label>
-                  <Input id="email" type="email" placeholder="john@company.com" />
+                  <Label>Email *</Label>
+                  <Input
+                    type="email"
+                    placeholder="john@company.com"
+                    value={newContact.email}
+                    onChange={(e) => setNewContact((c) => ({ ...c, email: e.target.value }))}
+                  />
                 </div>
                 <div className="space-y-2">
-                  <Label htmlFor="company">Company</Label>
-                  <Input id="company" placeholder="Acme Inc" />
+                  <Label>Company</Label>
+                  <Input
+                    placeholder="Acme Inc"
+                    value={newContact.company}
+                    onChange={(e) => setNewContact((c) => ({ ...c, company: e.target.value }))}
+                  />
                 </div>
                 <div className="space-y-2">
-                  <Label htmlFor="title">Job title</Label>
-                  <Input id="title" placeholder="CEO" />
+                  <Label>Job title</Label>
+                  <Input
+                    placeholder="CEO"
+                    value={newContact.title}
+                    onChange={(e) => setNewContact((c) => ({ ...c, title: e.target.value }))}
+                  />
                 </div>
               </div>
-              <div className="flex justify-end gap-3">
-                <Button variant="outline">Cancel</Button>
-                <Button>Add Contact</Button>
-              </div>
+              <DialogFooter>
+                <Button variant="outline" onClick={() => setAddDialogOpen(false)}>
+                  Cancel
+                </Button>
+                <Button onClick={handleAddContact} disabled={isSubmitting}>
+                  {isSubmitting && <Loader2 className="h-4 w-4 animate-spin mr-2" />}
+                  Add Contact
+                </Button>
+              </DialogFooter>
             </DialogContent>
           </Dialog>
         </div>
       </div>
+
+      {/* Import Preview Dialog */}
+      <Dialog open={importDialogOpen} onOpenChange={setImportDialogOpen}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>Import Preview</DialogTitle>
+            <DialogDescription>
+              {importPreview.length} contacts found in CSV
+            </DialogDescription>
+          </DialogHeader>
+          <div className="max-h-64 overflow-auto border rounded">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Email</TableHead>
+                  <TableHead>Name</TableHead>
+                  <TableHead>Company</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {importPreview.slice(0, 10).map((c, i) => (
+                  <TableRow key={i}>
+                    <TableCell className="text-sm">{c.email}</TableCell>
+                    <TableCell className="text-sm">{c.first_name} {c.last_name}</TableCell>
+                    <TableCell className="text-sm">{c.company}</TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+            {importPreview.length > 10 && (
+              <p className="text-sm text-slate-500 p-2">
+                ... and {importPreview.length - 10} more
+              </p>
+            )}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setImportDialogOpen(false)}>
+              Cancel
+            </Button>
+            <Button onClick={handleImportConfirm} disabled={isSubmitting}>
+              {isSubmitting && <Loader2 className="h-4 w-4 animate-spin mr-2" />}
+              Import {importPreview.length} Contacts
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* Filters and Search */}
       <div className="flex items-center gap-4">
@@ -226,7 +496,7 @@ export default function ContactsPage() {
             onChange={(e) => setSearchQuery(e.target.value)}
           />
         </div>
-        <Select defaultValue="all">
+        <Select value={statusFilter} onValueChange={setStatusFilter}>
           <SelectTrigger className="w-40">
             <SelectValue placeholder="Status" />
           </SelectTrigger>
@@ -240,9 +510,8 @@ export default function ContactsPage() {
             <SelectItem value="lost">Lost</SelectItem>
           </SelectContent>
         </Select>
-        <Button variant="outline">
-          <Filter className="h-4 w-4 mr-2" />
-          More Filters
+        <Button variant="outline" onClick={refresh}>
+          Refresh
         </Button>
       </div>
 
@@ -257,11 +526,7 @@ export default function ContactsPage() {
               <Mail className="h-4 w-4 mr-2" />
               Add to Campaign
             </Button>
-            <Button size="sm" variant="outline">
-              <UserPlus className="h-4 w-4 mr-2" />
-              Add Tags
-            </Button>
-            <Button size="sm" variant="outline" className="text-red-600">
+            <Button size="sm" variant="outline" className="text-red-600" onClick={handleDeleteSelected}>
               <Trash2 className="h-4 w-4 mr-2" />
               Delete
             </Button>
@@ -271,116 +536,115 @@ export default function ContactsPage() {
 
       {/* Contacts Table */}
       <div className="border rounded-lg bg-white">
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead className="w-12">
-                <Checkbox
-                  checked={selectedContacts.length === contacts.length}
-                  onCheckedChange={toggleAll}
-                />
-              </TableHead>
-              <TableHead>Contact</TableHead>
-              <TableHead>Company</TableHead>
-              <TableHead>Status</TableHead>
-              <TableHead>Email Verified</TableHead>
-              <TableHead>Tags</TableHead>
-              <TableHead>Last Contacted</TableHead>
-              <TableHead className="w-12"></TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {filteredContacts.map((contact) => (
-              <TableRow key={contact.id}>
-                <TableCell>
+        {filteredContacts.length === 0 ? (
+          <div className="p-12 text-center text-slate-500">
+            <Users className="h-12 w-12 mx-auto mb-4 text-slate-300" />
+            <p className="text-lg font-medium">No contacts yet</p>
+            <p className="text-sm">Add your first contact or import from CSV</p>
+          </div>
+        ) : (
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead className="w-12">
                   <Checkbox
-                    checked={selectedContacts.includes(contact.id)}
-                    onCheckedChange={() => toggleContact(contact.id)}
+                    checked={selectedContacts.length === filteredContacts.length && filteredContacts.length > 0}
+                    onCheckedChange={toggleAll}
                   />
-                </TableCell>
-                <TableCell>
-                  <div>
-                    <p className="font-medium">
-                      {contact.firstName} {contact.lastName}
-                    </p>
-                    <p className="text-sm text-slate-500">{contact.email}</p>
-                  </div>
-                </TableCell>
-                <TableCell>
-                  <div className="flex items-center gap-2">
-                    <Building2 className="h-4 w-4 text-slate-400" />
-                    <div>
-                      <p className="text-sm">{contact.company}</p>
-                      <p className="text-xs text-slate-500">{contact.title}</p>
-                    </div>
-                  </div>
-                </TableCell>
-                <TableCell>
-                  <Badge
-                    className={
-                      statusConfig[contact.status as keyof typeof statusConfig]
-                        ?.color
-                    }
-                  >
-                    {
-                      statusConfig[contact.status as keyof typeof statusConfig]
-                        ?.label
-                    }
-                  </Badge>
-                </TableCell>
-                <TableCell>
-                  {contact.emailVerified ? (
-                    <div className="flex items-center gap-1 text-green-600">
-                      <CheckCircle2 className="h-4 w-4" />
-                      <span className="text-sm">Verified</span>
-                    </div>
-                  ) : (
-                    <div className="flex items-center gap-1 text-slate-400">
-                      <Clock className="h-4 w-4" />
-                      <span className="text-sm">Pending</span>
-                    </div>
-                  )}
-                </TableCell>
-                <TableCell>
-                  <div className="flex gap-1 flex-wrap">
-                    {contact.tags.map((tag) => (
-                      <Badge key={tag} variant="outline" className="text-xs">
-                        {tag}
-                      </Badge>
-                    ))}
-                  </div>
-                </TableCell>
-                <TableCell className="text-sm text-slate-500">
-                  {contact.lastContacted || "Never"}
-                </TableCell>
-                <TableCell>
-                  <DropdownMenu>
-                    <DropdownMenuTrigger asChild>
-                      <Button variant="ghost" size="icon">
-                        <MoreHorizontal className="h-4 w-4" />
-                      </Button>
-                    </DropdownMenuTrigger>
-                    <DropdownMenuContent align="end">
-                      <DropdownMenuItem>
-                        <Mail className="h-4 w-4 mr-2" />
-                        Send Email
-                      </DropdownMenuItem>
-                      <DropdownMenuItem>
-                        <UserPlus className="h-4 w-4 mr-2" />
-                        Add to Campaign
-                      </DropdownMenuItem>
-                      <DropdownMenuSeparator />
-                      <DropdownMenuItem className="text-red-600">
-                        <Trash2 className="h-4 w-4 mr-2" />
-                        Delete
-                      </DropdownMenuItem>
-                    </DropdownMenuContent>
-                  </DropdownMenu>
-                </TableCell>
+                </TableHead>
+                <TableHead>Contact</TableHead>
+                <TableHead>Company</TableHead>
+                <TableHead>Status</TableHead>
+                <TableHead>Email Verified</TableHead>
+                <TableHead>Tags</TableHead>
+                <TableHead className="w-12"></TableHead>
               </TableRow>
-            ))}
-          </TableBody>
-        </Table>
+            </TableHeader>
+            <TableBody>
+              {filteredContacts.map((contact) => (
+                <TableRow key={contact.id}>
+                  <TableCell>
+                    <Checkbox
+                      checked={selectedContacts.includes(contact.id)}
+                      onCheckedChange={() => toggleContact(contact.id)}
+                    />
+                  </TableCell>
+                  <TableCell>
+                    <div>
+                      <p className="font-medium">
+                        {contact.first_name} {contact.last_name}
+                      </p>
+                      <p className="text-sm text-slate-500">{contact.email}</p>
+                    </div>
+                  </TableCell>
+                  <TableCell>
+                    <div className="flex items-center gap-2">
+                      <Building2 className="h-4 w-4 text-slate-400" />
+                      <div>
+                        <p className="text-sm">{contact.company || "-"}</p>
+                        <p className="text-xs text-slate-500">{contact.title || ""}</p>
+                      </div>
+                    </div>
+                  </TableCell>
+                  <TableCell>
+                    <Badge className={statusConfig[contact.status]?.color || statusConfig.new.color}>
+                      {statusConfig[contact.status]?.label || "New"}
+                    </Badge>
+                  </TableCell>
+                  <TableCell>
+                    {contact.email_verified ? (
+                      <div className="flex items-center gap-1 text-green-600">
+                        <CheckCircle2 className="h-4 w-4" />
+                        <span className="text-sm">Verified</span>
+                      </div>
+                    ) : (
+                      <div className="flex items-center gap-1 text-slate-400">
+                        <Clock className="h-4 w-4" />
+                        <span className="text-sm">Pending</span>
+                      </div>
+                    )}
+                  </TableCell>
+                  <TableCell>
+                    <div className="flex gap-1 flex-wrap">
+                      {contact.tags?.map((tag) => (
+                        <Badge key={tag} variant="outline" className="text-xs">
+                          {tag}
+                        </Badge>
+                      ))}
+                    </div>
+                  </TableCell>
+                  <TableCell>
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <Button variant="ghost" size="icon">
+                          <MoreHorizontal className="h-4 w-4" />
+                        </Button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="end">
+                        <DropdownMenuItem>
+                          <Mail className="h-4 w-4 mr-2" />
+                          Send Email
+                        </DropdownMenuItem>
+                        <DropdownMenuItem>
+                          <UserPlus className="h-4 w-4 mr-2" />
+                          Add to Campaign
+                        </DropdownMenuItem>
+                        <DropdownMenuSeparator />
+                        <DropdownMenuItem
+                          className="text-red-600"
+                          onClick={() => deleteContact(contact.id)}
+                        >
+                          <Trash2 className="h-4 w-4 mr-2" />
+                          Delete
+                        </DropdownMenuItem>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        )}
       </div>
 
       {/* Pagination */}
@@ -388,14 +652,6 @@ export default function ContactsPage() {
         <p className="text-sm text-slate-500">
           Showing {filteredContacts.length} of {contacts.length} contacts
         </p>
-        <div className="flex gap-2">
-          <Button variant="outline" size="sm" disabled>
-            Previous
-          </Button>
-          <Button variant="outline" size="sm">
-            Next
-          </Button>
-        </div>
       </div>
     </div>
   );

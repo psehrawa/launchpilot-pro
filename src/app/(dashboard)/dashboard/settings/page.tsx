@@ -1,82 +1,113 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Separator } from "@/components/ui/separator";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-} from "@/components/ui/dialog";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
+import { Badge } from "@/components/ui/badge";
 import {
   User,
   Building2,
   Key,
-  Mail,
-  Link2,
-  Plus,
-  Copy,
-  Trash2,
+  CreditCard,
+  Bell,
+  Loader2,
+  Check,
+  ExternalLink,
   Eye,
   EyeOff,
-  Check,
-  AlertCircle,
 } from "lucide-react";
-
-const apiKeys = [
-  {
-    id: "1",
-    name: "Production API Key",
-    prefix: "lp_live_",
-    lastUsed: "2 hours ago",
-    createdAt: "Jan 15, 2026",
-  },
-  {
-    id: "2",
-    name: "Development Key",
-    prefix: "lp_test_",
-    lastUsed: "Never",
-    createdAt: "Feb 1, 2026",
-  },
-];
-
-const connectedAccounts = [
-  {
-    id: "1",
-    provider: "Gmail",
-    email: "parshant@gmail.com",
-    status: "connected",
-    isDefault: true,
-  },
-];
-
-const enrichmentProviders = [
-  { name: "Hunter.io", configured: true, creditsUsed: 15, creditsTotal: 25 },
-  { name: "Snov.io", configured: false, creditsUsed: 0, creditsTotal: 50 },
-  { name: "Clearout", configured: true, creditsUsed: 45, creditsTotal: 100 },
-];
+import { createClient } from "@/lib/supabase/client";
+import { useToast } from "@/hooks/use-toast";
 
 export default function SettingsPage() {
-  const [showKey, setShowKey] = useState<string | null>(null);
+  const { toast } = useToast();
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [showApiKeys, setShowApiKeys] = useState<Record<string, boolean>>({});
+  
+  const [profile, setProfile] = useState({
+    name: "",
+    email: "",
+  });
+  
+  const [org, setOrg] = useState({
+    name: "",
+    plan: "free",
+  });
+  
+  const [apiKeys, setApiKeys] = useState({
+    hunter: "",
+    snov: "",
+    clearout: "",
+    sendgrid: "",
+  });
+
+  useEffect(() => {
+    const loadData = async () => {
+      const supabase = createClient();
+      const { data: { user } } = await supabase.auth.getUser();
+      
+      if (user) {
+        setProfile({
+          name: user.user_metadata?.full_name || user.user_metadata?.name || "",
+          email: user.email || "",
+        });
+
+        // Get org
+        const { data: membership } = await supabase
+          .from("lp_org_members")
+          .select("org_id, lp_organizations(name, plan)")
+          .eq("user_id", user.id)
+          .limit(1)
+          .single();
+
+        if (membership?.lp_organizations) {
+          const orgData = membership.lp_organizations as any;
+          setOrg({
+            name: orgData.name || "",
+            plan: orgData.plan || "free",
+          });
+        }
+      }
+      setLoading(false);
+    };
+
+    loadData();
+  }, []);
+
+  const handleSaveProfile = async () => {
+    setSaving(true);
+    const supabase = createClient();
+    
+    const { error } = await supabase.auth.updateUser({
+      data: { full_name: profile.name }
+    });
+
+    setSaving(false);
+    if (error) {
+      toast({ title: "Error", description: error.message, variant: "destructive" });
+    } else {
+      toast({ title: "Success", description: "Profile updated" });
+    }
+  };
+
+  const toggleShowKey = (key: string) => {
+    setShowApiKeys((prev) => ({ ...prev, [key]: !prev[key] }));
+  };
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center h-64">
+        <Loader2 className="h-8 w-8 animate-spin text-blue-600" />
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6">
-      {/* Header */}
       <div>
         <h1 className="text-2xl font-bold">Settings</h1>
         <p className="text-slate-500">Manage your account and preferences</p>
@@ -84,372 +115,324 @@ export default function SettingsPage() {
 
       <Tabs defaultValue="profile" className="space-y-6">
         <TabsList>
-          <TabsTrigger value="profile">Profile</TabsTrigger>
-          <TabsTrigger value="team">Team</TabsTrigger>
-          <TabsTrigger value="api">API Keys</TabsTrigger>
-          <TabsTrigger value="integrations">Integrations</TabsTrigger>
-          <TabsTrigger value="email">Email Settings</TabsTrigger>
+          <TabsTrigger value="profile" className="flex items-center gap-2">
+            <User className="h-4 w-4" />
+            Profile
+          </TabsTrigger>
+          <TabsTrigger value="organization" className="flex items-center gap-2">
+            <Building2 className="h-4 w-4" />
+            Organization
+          </TabsTrigger>
+          <TabsTrigger value="api-keys" className="flex items-center gap-2">
+            <Key className="h-4 w-4" />
+            API Keys
+          </TabsTrigger>
+          <TabsTrigger value="billing" className="flex items-center gap-2">
+            <CreditCard className="h-4 w-4" />
+            Billing
+          </TabsTrigger>
         </TabsList>
 
         {/* Profile Tab */}
         <TabsContent value="profile">
           <Card>
             <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <User className="h-5 w-5" />
-                Profile Settings
-              </CardTitle>
-              <CardDescription>
-                Update your personal information
-              </CardDescription>
+              <CardTitle>Profile</CardTitle>
+              <CardDescription>Your personal information</CardDescription>
             </CardHeader>
-            <CardContent className="space-y-6">
-              <div className="grid md:grid-cols-2 gap-6">
-                <div className="space-y-2">
-                  <Label htmlFor="fullName">Full Name</Label>
-                  <Input id="fullName" defaultValue="Parshant Sehrawat" />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="email">Email</Label>
-                  <Input id="email" type="email" defaultValue="parshant@example.com" />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="timezone">Timezone</Label>
-                  <Select defaultValue="pst">
-                    <SelectTrigger>
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="pst">Pacific Time (PST)</SelectItem>
-                      <SelectItem value="est">Eastern Time (EST)</SelectItem>
-                      <SelectItem value="utc">UTC</SelectItem>
-                      <SelectItem value="ist">India Standard Time (IST)</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
+            <CardContent className="space-y-4">
+              <div className="space-y-2">
+                <Label>Full Name</Label>
+                <Input
+                  value={profile.name}
+                  onChange={(e) => setProfile((p) => ({ ...p, name: e.target.value }))}
+                  placeholder="Your name"
+                />
               </div>
-              <Separator />
-              <div className="flex justify-end">
-                <Button>Save Changes</Button>
+              <div className="space-y-2">
+                <Label>Email</Label>
+                <Input value={profile.email} disabled className="bg-slate-50" />
+                <p className="text-xs text-slate-500">Email cannot be changed</p>
               </div>
+              <Button onClick={handleSaveProfile} disabled={saving}>
+                {saving && <Loader2 className="h-4 w-4 animate-spin mr-2" />}
+                Save Changes
+              </Button>
             </CardContent>
           </Card>
         </TabsContent>
 
-        {/* Team Tab */}
-        <TabsContent value="team">
+        {/* Organization Tab */}
+        <TabsContent value="organization">
           <Card>
             <CardHeader>
-              <div className="flex items-center justify-between">
-                <div>
-                  <CardTitle className="flex items-center gap-2">
-                    <Building2 className="h-5 w-5" />
-                    Team Members
-                  </CardTitle>
-                  <CardDescription>
-                    Manage who has access to your workspace
-                  </CardDescription>
-                </div>
-                <Dialog>
-                  <DialogTrigger asChild>
-                    <Button>
-                      <Plus className="h-4 w-4 mr-2" />
-                      Invite Member
-                    </Button>
-                  </DialogTrigger>
-                  <DialogContent>
-                    <DialogHeader>
-                      <DialogTitle>Invite Team Member</DialogTitle>
-                      <DialogDescription>
-                        Send an invitation to join your workspace
-                      </DialogDescription>
-                    </DialogHeader>
-                    <div className="space-y-4 py-4">
-                      <div className="space-y-2">
-                        <Label htmlFor="inviteEmail">Email address</Label>
-                        <Input id="inviteEmail" type="email" placeholder="colleague@company.com" />
-                      </div>
-                      <div className="space-y-2">
-                        <Label htmlFor="role">Role</Label>
-                        <Select defaultValue="member">
-                          <SelectTrigger>
-                            <SelectValue />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="admin">Admin</SelectItem>
-                            <SelectItem value="member">Member</SelectItem>
-                          </SelectContent>
-                        </Select>
-                      </div>
-                    </div>
-                    <div className="flex justify-end gap-3">
-                      <Button variant="outline">Cancel</Button>
-                      <Button>Send Invitation</Button>
-                    </div>
-                  </DialogContent>
-                </Dialog>
-              </div>
+              <CardTitle>Organization</CardTitle>
+              <CardDescription>Your workspace settings</CardDescription>
             </CardHeader>
-            <CardContent>
-              <div className="space-y-4">
-                <div className="flex items-center justify-between p-4 border rounded-lg">
-                  <div className="flex items-center gap-4">
-                    <div className="h-10 w-10 rounded-full bg-blue-100 flex items-center justify-center font-medium text-blue-600">
-                      PS
-                    </div>
-                    <div>
-                      <p className="font-medium">Parshant Sehrawat</p>
-                      <p className="text-sm text-slate-500">parshant@example.com</p>
-                    </div>
-                  </div>
-                  <Badge>Owner</Badge>
+            <CardContent className="space-y-4">
+              <div className="space-y-2">
+                <Label>Organization Name</Label>
+                <Input
+                  value={org.name}
+                  onChange={(e) => setOrg((o) => ({ ...o, name: e.target.value }))}
+                  placeholder="Your company name"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label>Current Plan</Label>
+                <div className="flex items-center gap-2">
+                  <Badge variant="secondary" className="text-sm capitalize">
+                    {org.plan}
+                  </Badge>
+                  <Button variant="link" className="text-blue-600 p-0 h-auto">
+                    Upgrade
+                  </Button>
                 </div>
               </div>
+              <Button>Save Changes</Button>
             </CardContent>
           </Card>
         </TabsContent>
 
         {/* API Keys Tab */}
-        <TabsContent value="api">
-          <Card>
-            <CardHeader>
-              <div className="flex items-center justify-between">
-                <div>
-                  <CardTitle className="flex items-center gap-2">
-                    <Key className="h-5 w-5" />
-                    API Keys
-                  </CardTitle>
-                  <CardDescription>
-                    Manage your API keys for programmatic access
-                  </CardDescription>
-                </div>
-                <Dialog>
-                  <DialogTrigger asChild>
-                    <Button>
-                      <Plus className="h-4 w-4 mr-2" />
-                      Create Key
-                    </Button>
-                  </DialogTrigger>
-                  <DialogContent>
-                    <DialogHeader>
-                      <DialogTitle>Create API Key</DialogTitle>
-                      <DialogDescription>
-                        Create a new API key for your integrations
-                      </DialogDescription>
-                    </DialogHeader>
-                    <div className="space-y-4 py-4">
-                      <div className="space-y-2">
-                        <Label htmlFor="keyName">Key name</Label>
-                        <Input id="keyName" placeholder="e.g., Production API" />
-                      </div>
-                    </div>
-                    <div className="flex justify-end gap-3">
-                      <Button variant="outline">Cancel</Button>
-                      <Button>Create Key</Button>
-                    </div>
-                  </DialogContent>
-                </Dialog>
-              </div>
-            </CardHeader>
-            <CardContent>
-              <div className="space-y-4">
-                {apiKeys.map((key) => (
-                  <div
-                    key={key.id}
-                    className="flex items-center justify-between p-4 border rounded-lg"
-                  >
-                    <div>
-                      <p className="font-medium">{key.name}</p>
-                      <div className="flex items-center gap-4 mt-1">
-                        <code className="text-sm bg-slate-100 px-2 py-1 rounded">
-                          {showKey === key.id
-                            ? `${key.prefix}xxxxxxxxxxxxxxxxxxxx`
-                            : `${key.prefix}••••••••••••`}
-                        </code>
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => setShowKey(showKey === key.id ? null : key.id)}
-                        >
-                          {showKey === key.id ? (
-                            <EyeOff className="h-4 w-4" />
-                          ) : (
-                            <Eye className="h-4 w-4" />
-                          )}
-                        </Button>
-                        <Button variant="ghost" size="sm">
-                          <Copy className="h-4 w-4" />
-                        </Button>
-                      </div>
-                      <p className="text-xs text-slate-500 mt-2">
-                        Created {key.createdAt} • Last used {key.lastUsed}
-                      </p>
-                    </div>
-                    <Button variant="ghost" size="icon" className="text-red-500">
-                      <Trash2 className="h-4 w-4" />
-                    </Button>
-                  </div>
-                ))}
-              </div>
-            </CardContent>
-          </Card>
-        </TabsContent>
-
-        {/* Integrations Tab */}
-        <TabsContent value="integrations">
-          <div className="space-y-6">
-            {/* Enrichment Providers */}
+        <TabsContent value="api-keys">
+          <div className="space-y-4">
             <Card>
               <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <Link2 className="h-5 w-5" />
-                  Email Enrichment Providers
-                </CardTitle>
+                <CardTitle>Email Enrichment APIs</CardTitle>
                 <CardDescription>
-                  Connect your email finding and verification services
+                  Connect email finder and verification services
                 </CardDescription>
               </CardHeader>
-              <CardContent>
-                <div className="space-y-4">
-                  {enrichmentProviders.map((provider) => (
-                    <div
-                      key={provider.name}
-                      className="flex items-center justify-between p-4 border rounded-lg"
+              <CardContent className="space-y-6">
+                {/* Hunter */}
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <Label>Hunter.io API Key</Label>
+                    <a
+                      href="https://hunter.io/api-keys"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-xs text-blue-600 flex items-center gap-1 hover:underline"
                     >
-                      <div className="flex items-center gap-4">
-                        {provider.configured ? (
-                          <div className="h-10 w-10 rounded-lg bg-green-100 flex items-center justify-center">
-                            <Check className="h-5 w-5 text-green-600" />
-                          </div>
-                        ) : (
-                          <div className="h-10 w-10 rounded-lg bg-slate-100 flex items-center justify-center">
-                            <AlertCircle className="h-5 w-5 text-slate-400" />
-                          </div>
-                        )}
-                        <div>
-                          <p className="font-medium">{provider.name}</p>
-                          <p className="text-sm text-slate-500">
-                            {provider.configured
-                              ? `${provider.creditsUsed}/${provider.creditsTotal} credits used`
-                              : "Not configured"}
-                          </p>
-                        </div>
-                      </div>
-                      <Button variant={provider.configured ? "outline" : "default"}>
-                        {provider.configured ? "Configure" : "Connect"}
+                      Get API Key <ExternalLink className="h-3 w-3" />
+                    </a>
+                  </div>
+                  <div className="flex gap-2">
+                    <div className="relative flex-1">
+                      <Input
+                        type={showApiKeys.hunter ? "text" : "password"}
+                        value={apiKeys.hunter}
+                        onChange={(e) => setApiKeys((k) => ({ ...k, hunter: e.target.value }))}
+                        placeholder="Enter your Hunter API key"
+                      />
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="absolute right-1 top-1/2 -translate-y-1/2"
+                        onClick={() => toggleShowKey("hunter")}
+                      >
+                        {showApiKeys.hunter ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
                       </Button>
                     </div>
-                  ))}
+                    <Button variant="outline">Test</Button>
+                  </div>
+                  <p className="text-xs text-slate-500">25 free searches/month</p>
                 </div>
+
+                {/* Snov */}
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <Label>Snov.io API Key</Label>
+                    <a
+                      href="https://app.snov.io/integrations/api"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-xs text-blue-600 flex items-center gap-1 hover:underline"
+                    >
+                      Get API Key <ExternalLink className="h-3 w-3" />
+                    </a>
+                  </div>
+                  <div className="flex gap-2">
+                    <div className="relative flex-1">
+                      <Input
+                        type={showApiKeys.snov ? "text" : "password"}
+                        value={apiKeys.snov}
+                        onChange={(e) => setApiKeys((k) => ({ ...k, snov: e.target.value }))}
+                        placeholder="Enter your Snov API key"
+                      />
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="absolute right-1 top-1/2 -translate-y-1/2"
+                        onClick={() => toggleShowKey("snov")}
+                      >
+                        {showApiKeys.snov ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                      </Button>
+                    </div>
+                    <Button variant="outline">Test</Button>
+                  </div>
+                  <p className="text-xs text-slate-500">50 free credits on trial</p>
+                </div>
+
+                {/* Clearout */}
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <Label>Clearout API Key</Label>
+                    <a
+                      href="https://app.clearout.io/settings/apikey"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-xs text-blue-600 flex items-center gap-1 hover:underline"
+                    >
+                      Get API Key <ExternalLink className="h-3 w-3" />
+                    </a>
+                  </div>
+                  <div className="flex gap-2">
+                    <div className="relative flex-1">
+                      <Input
+                        type={showApiKeys.clearout ? "text" : "password"}
+                        value={apiKeys.clearout}
+                        onChange={(e) => setApiKeys((k) => ({ ...k, clearout: e.target.value }))}
+                        placeholder="Enter your Clearout API key"
+                      />
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="absolute right-1 top-1/2 -translate-y-1/2"
+                        onClick={() => toggleShowKey("clearout")}
+                      >
+                        {showApiKeys.clearout ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                      </Button>
+                    </div>
+                    <Button variant="outline">Test</Button>
+                  </div>
+                  <p className="text-xs text-slate-500">100 free verifications</p>
+                </div>
+
+                <Button className="w-full">
+                  <Check className="h-4 w-4 mr-2" />
+                  Save API Keys
+                </Button>
               </CardContent>
             </Card>
 
-            {/* Connected Email Accounts */}
             <Card>
               <CardHeader>
-                <div className="flex items-center justify-between">
-                  <div>
-                    <CardTitle className="flex items-center gap-2">
-                      <Mail className="h-5 w-5" />
-                      Connected Email Accounts
-                    </CardTitle>
-                    <CardDescription>
-                      Email accounts used for sending campaigns
-                    </CardDescription>
-                  </div>
-                  <Button>
-                    <Plus className="h-4 w-4 mr-2" />
-                    Connect Account
-                  </Button>
-                </div>
+                <CardTitle>Email Sending</CardTitle>
+                <CardDescription>
+                  Configure your email delivery service
+                </CardDescription>
               </CardHeader>
-              <CardContent>
-                <div className="space-y-4">
-                  {connectedAccounts.map((account) => (
-                    <div
-                      key={account.id}
-                      className="flex items-center justify-between p-4 border rounded-lg"
+              <CardContent className="space-y-6">
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <Label>SendGrid API Key</Label>
+                    <a
+                      href="https://app.sendgrid.com/settings/api_keys"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-xs text-blue-600 flex items-center gap-1 hover:underline"
                     >
-                      <div className="flex items-center gap-4">
-                        <div className="h-10 w-10 rounded-lg bg-red-100 flex items-center justify-center">
-                          <Mail className="h-5 w-5 text-red-600" />
-                        </div>
-                        <div>
-                          <div className="flex items-center gap-2">
-                            <p className="font-medium">{account.provider}</p>
-                            {account.isDefault && (
-                              <Badge variant="secondary">Default</Badge>
-                            )}
-                          </div>
-                          <p className="text-sm text-slate-500">{account.email}</p>
-                        </div>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <Badge className="bg-green-100 text-green-700">Connected</Badge>
-                        <Button variant="ghost" size="icon" className="text-red-500">
-                          <Trash2 className="h-4 w-4" />
-                        </Button>
-                      </div>
+                      Get API Key <ExternalLink className="h-3 w-3" />
+                    </a>
+                  </div>
+                  <div className="flex gap-2">
+                    <div className="relative flex-1">
+                      <Input
+                        type={showApiKeys.sendgrid ? "text" : "password"}
+                        value={apiKeys.sendgrid}
+                        onChange={(e) => setApiKeys((k) => ({ ...k, sendgrid: e.target.value }))}
+                        placeholder="Enter your SendGrid API key"
+                      />
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="absolute right-1 top-1/2 -translate-y-1/2"
+                        onClick={() => toggleShowKey("sendgrid")}
+                      >
+                        {showApiKeys.sendgrid ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                      </Button>
                     </div>
-                  ))}
+                    <Button variant="outline">Test</Button>
+                  </div>
+                  <p className="text-xs text-slate-500">100 free emails/day</p>
                 </div>
+
+                <Button className="w-full">
+                  <Check className="h-4 w-4 mr-2" />
+                  Save Email Settings
+                </Button>
               </CardContent>
             </Card>
           </div>
         </TabsContent>
 
-        {/* Email Settings Tab */}
-        <TabsContent value="email">
+        {/* Billing Tab */}
+        <TabsContent value="billing">
           <Card>
             <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <Mail className="h-5 w-5" />
-                Email Settings
-              </CardTitle>
-              <CardDescription>
-                Configure your email sending preferences
-              </CardDescription>
+              <CardTitle>Billing</CardTitle>
+              <CardDescription>Manage your subscription and payments</CardDescription>
             </CardHeader>
             <CardContent className="space-y-6">
-              <div className="grid md:grid-cols-2 gap-6">
-                <div className="space-y-2">
-                  <Label htmlFor="fromName">From Name</Label>
-                  <Input id="fromName" defaultValue="Parshant Sehrawat" />
+              <div className="p-4 border rounded-lg bg-slate-50">
+                <div className="flex items-center justify-between mb-2">
+                  <span className="font-medium">Current Plan</span>
+                  <Badge variant="secondary" className="capitalize">{org.plan}</Badge>
                 </div>
-                <div className="space-y-2">
-                  <Label htmlFor="replyTo">Reply-To Email</Label>
-                  <Input id="replyTo" type="email" defaultValue="parshant@example.com" />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="dailyLimit">Daily Sending Limit</Label>
-                  <Select defaultValue="100">
-                    <SelectTrigger>
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="50">50 emails/day</SelectItem>
-                      <SelectItem value="100">100 emails/day</SelectItem>
-                      <SelectItem value="200">200 emails/day</SelectItem>
-                      <SelectItem value="500">500 emails/day</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="trackOpens">Open Tracking</Label>
-                  <Select defaultValue="enabled">
-                    <SelectTrigger>
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="enabled">Enabled</SelectItem>
-                      <SelectItem value="disabled">Disabled</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
+                <p className="text-sm text-slate-500">
+                  {org.plan === "free" 
+                    ? "You're on the free plan. Upgrade to unlock more features."
+                    : `You're on the ${org.plan} plan.`}
+                </p>
               </div>
-              <Separator />
-              <div className="flex justify-end">
-                <Button>Save Settings</Button>
+
+              <div className="grid md:grid-cols-3 gap-4">
+                <Card className={org.plan === "free" ? "border-blue-500" : ""}>
+                  <CardContent className="p-4">
+                    <h3 className="font-semibold mb-1">Starter</h3>
+                    <p className="text-2xl font-bold mb-2">$19<span className="text-sm font-normal text-slate-500">/mo</span></p>
+                    <ul className="text-sm space-y-1 text-slate-600">
+                      <li>• 500 contacts</li>
+                      <li>• 1,000 emails/mo</li>
+                      <li>• Basic sequences</li>
+                    </ul>
+                    <Button className="w-full mt-4" variant={org.plan === "starter" ? "secondary" : "default"}>
+                      {org.plan === "starter" ? "Current Plan" : "Upgrade"}
+                    </Button>
+                  </CardContent>
+                </Card>
+
+                <Card className={org.plan === "growth" ? "border-blue-500" : ""}>
+                  <CardContent className="p-4">
+                    <h3 className="font-semibold mb-1">Growth</h3>
+                    <p className="text-2xl font-bold mb-2">$49<span className="text-sm font-normal text-slate-500">/mo</span></p>
+                    <ul className="text-sm space-y-1 text-slate-600">
+                      <li>• 5,000 contacts</li>
+                      <li>• 10,000 emails/mo</li>
+                      <li>• Advanced analytics</li>
+                    </ul>
+                    <Button className="w-full mt-4" variant={org.plan === "growth" ? "secondary" : "default"}>
+                      {org.plan === "growth" ? "Current Plan" : "Upgrade"}
+                    </Button>
+                  </CardContent>
+                </Card>
+
+                <Card className={org.plan === "scale" ? "border-blue-500" : ""}>
+                  <CardContent className="p-4">
+                    <h3 className="font-semibold mb-1">Scale</h3>
+                    <p className="text-2xl font-bold mb-2">$99<span className="text-sm font-normal text-slate-500">/mo</span></p>
+                    <ul className="text-sm space-y-1 text-slate-600">
+                      <li>• Unlimited contacts</li>
+                      <li>• 50,000 emails/mo</li>
+                      <li>• API access</li>
+                    </ul>
+                    <Button className="w-full mt-4" variant={org.plan === "scale" ? "secondary" : "default"}>
+                      {org.plan === "scale" ? "Current Plan" : "Upgrade"}
+                    </Button>
+                  </CardContent>
+                </Card>
               </div>
             </CardContent>
           </Card>

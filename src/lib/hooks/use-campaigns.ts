@@ -3,39 +3,36 @@
 import { useState, useEffect, useCallback } from "react";
 import { createClient } from "@/lib/supabase/client";
 
-export interface Contact {
+export interface Campaign {
   id: string;
-  org_id?: string;
-  email: string;
-  first_name: string | null;
-  last_name: string | null;
-  company: string | null;
-  title: string | null;
+  org_id: string;
+  name: string;
   status: string;
-  tags: string[];
-  email_verified: boolean;
   created_at: string;
 }
 
-export function useContacts() {
-  const [contacts, setContacts] = useState<Contact[]>([]);
+export interface SequenceStep {
+  id: string;
+  campaign_id: string;
+  step_number: number;
+  subject: string;
+  body: string;
+  delay_days: number;
+}
+
+export function useCampaigns() {
+  const [campaigns, setCampaigns] = useState<Campaign[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [orgId, setOrgId] = useState<string | null>(null);
 
   const supabase = createClient();
 
-  // Get user's org_id on mount
   useEffect(() => {
     const getOrgId = async () => {
       const { data: { user } } = await supabase.auth.getUser();
-      if (!user) {
-        setError("Not authenticated");
-        setLoading(false);
-        return;
-      }
+      if (!user) return;
 
-      // Get user's org from membership
       const { data: membership } = await supabase
         .from("lp_org_members")
         .select("org_id")
@@ -46,35 +43,30 @@ export function useContacts() {
       if (membership?.org_id) {
         setOrgId(membership.org_id);
       } else {
-        // Fallback to default org
         const { data: defaultOrg } = await supabase
           .from("lp_organizations")
           .select("id")
           .eq("slug", "default")
           .single();
-        
-        if (defaultOrg) {
-          setOrgId(defaultOrg.id);
-        }
+        if (defaultOrg) setOrgId(defaultOrg.id);
       }
     };
-
     getOrgId();
   }, [supabase]);
 
-  const fetchContacts = useCallback(async () => {
+  const fetchCampaigns = useCallback(async () => {
     if (!orgId) return;
     
     setLoading(true);
     try {
       const { data, error } = await supabase
-        .from("lp_contacts")
+        .from("lp_campaigns")
         .select("*")
         .eq("org_id", orgId)
         .order("created_at", { ascending: false });
 
       if (error) throw error;
-      setContacts(data || []);
+      setCampaigns(data || []);
     } catch (err: any) {
       setError(err.message || String(err));
     } finally {
@@ -82,89 +74,84 @@ export function useContacts() {
     }
   }, [supabase, orgId]);
 
-  // Fetch when orgId is available
   useEffect(() => {
-    if (orgId) {
-      fetchContacts();
-    }
-  }, [orgId, fetchContacts]);
+    if (orgId) fetchCampaigns();
+  }, [orgId, fetchCampaigns]);
 
-  const addContact = async (contact: Partial<Contact>) => {
+  const createCampaign = async (name: string) => {
     if (!orgId) return { success: false, error: "No organization" };
     
     try {
       const { data, error } = await supabase
-        .from("lp_contacts")
-        .insert([{ ...contact, org_id: orgId, status: contact.status || "new", tags: contact.tags || [] }])
+        .from("lp_campaigns")
+        .insert([{ name, org_id: orgId, status: "draft" }])
         .select()
         .single();
 
       if (error) throw error;
-      setContacts((prev) => [data, ...prev]);
+      setCampaigns((prev) => [data, ...prev]);
       return { success: true, data };
     } catch (err: any) {
       return { success: false, error: err.message || String(err) };
     }
   };
 
-  const updateContact = async (id: string, updates: Partial<Contact>) => {
+  const updateCampaign = async (id: string, updates: Partial<Campaign>) => {
     try {
       const { data, error } = await supabase
-        .from("lp_contacts")
+        .from("lp_campaigns")
         .update(updates)
         .eq("id", id)
         .select()
         .single();
 
       if (error) throw error;
-      setContacts((prev) =>
-        prev.map((c) => (c.id === id ? { ...c, ...data } : c))
-      );
+      setCampaigns((prev) => prev.map((c) => (c.id === id ? data : c)));
       return { success: true, data };
     } catch (err: any) {
       return { success: false, error: err.message || String(err) };
     }
   };
 
-  const deleteContact = async (id: string) => {
+  const deleteCampaign = async (id: string) => {
     try {
       const { error } = await supabase
-        .from("lp_contacts")
+        .from("lp_campaigns")
         .delete()
         .eq("id", id);
 
       if (error) throw error;
-      setContacts((prev) => prev.filter((c) => c.id !== id));
+      setCampaigns((prev) => prev.filter((c) => c.id !== id));
       return { success: true };
     } catch (err: any) {
       return { success: false, error: err.message || String(err) };
     }
   };
 
-  const deleteContacts = async (ids: string[]) => {
+  const addSequenceStep = async (campaignId: string, step: Omit<SequenceStep, "id" | "campaign_id">) => {
     try {
-      const { error } = await supabase
-        .from("lp_contacts")
-        .delete()
-        .in("id", ids);
+      const { data, error } = await supabase
+        .from("lp_sequence_steps")
+        .insert([{ ...step, campaign_id: campaignId }])
+        .select()
+        .single();
 
       if (error) throw error;
-      setContacts((prev) => prev.filter((c) => !ids.includes(c.id)));
-      return { success: true };
+      return { success: true, data };
     } catch (err: any) {
       return { success: false, error: err.message || String(err) };
     }
   };
 
   return {
-    contacts,
+    campaigns,
     loading,
     error,
     orgId,
-    refresh: fetchContacts,
-    addContact,
-    updateContact,
-    deleteContact,
-    deleteContacts,
+    refresh: fetchCampaigns,
+    createCampaign,
+    updateCampaign,
+    deleteCampaign,
+    addSequenceStep,
   };
 }
