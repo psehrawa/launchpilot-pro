@@ -14,6 +14,7 @@ export interface Contact {
   status: string;
   tags: string[];
   email_verified: boolean;
+  email_verification_status: "valid" | "invalid" | "unknown" | "disposable" | "catchall" | null;
   created_at: string;
 }
 

@@ -99,16 +99,20 @@ export default function InboxPage() {
       const threadMap = new Map<string, EmailThread>();
 
       for (const email of emails || []) {
-        if (!email.contact) continue;
+        // Handle Supabase join returning arrays
+        const contact = Array.isArray(email.contact) ? email.contact[0] : email.contact;
+        const campaign = Array.isArray(email.campaign) ? email.campaign[0] : email.campaign;
+        
+        if (!contact) continue;
 
-        const contactId = email.contact.id;
+        const contactId = contact.id;
         const emailEvents = events?.filter((e) => e.email_id === email.id) || [];
 
         if (!threadMap.has(contactId)) {
           threadMap.set(contactId, {
             id: email.id,
-            contact: email.contact,
-            campaign: email.campaign || { id: "", name: "Unknown" },
+            contact: contact,
+            campaign: campaign || { id: "", name: "Unknown" },
             lastEmail: {
               subject: email.subject || "",
               status: email.status,

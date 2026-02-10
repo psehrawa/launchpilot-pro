@@ -16,9 +16,50 @@ function personalize(template: string, contact: any): string {
     .replace(/\{\{email\}\}/g, contact.email || "");
 }
 
+// Rewrite links for click tracking
+function rewriteLinksForTracking(html: string, trackingId: string, baseUrl: string): string {
+  // Match all href attributes with http/https URLs
+  const linkRegex = /href="(https?:\/\/[^"]+)"/gi;
+  
+  return html.replace(linkRegex, (match, url) => {
+    // Don't track unsubscribe links or mailto
+    if (url.includes("unsubscribe") || url.startsWith("mailto:")) {
+      return match;
+    }
+    const trackingUrl = `${baseUrl}/api/track/click?id=${trackingId}&url=${encodeURIComponent(url)}`;
+    return `href="${trackingUrl}"`;
+  });
+}
+
+// Verify email before sending (using NeverBounce/Clearout)
+async function verifyEmail(email: string): Promise<{ valid: boolean; status: string }> {
+  try {
+    const baseUrl = process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000";
+    const res = await fetch(`${baseUrl}/api/verify-email`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email }),
+    });
+    
+    if (!res.ok) {
+      return { valid: true, status: "unknown" }; // Assume valid if verification fails
+    }
+    
+    const data = await res.json();
+    return { valid: data.valid, status: data.status };
+  } catch {
+    return { valid: true, status: "unknown" };
+  }
+}
+
 export async function POST(request: NextRequest) {
   try {
-    const { campaign_id, contact_ids } = await request.json();
+    const { 
+      campaign_id, 
+      contact_ids, 
+      verify_emails = true,
+      schedule_send_at = null, // ISO timestamp for scheduled sends
+    } = await request.json();
 
     if (!campaign_id || !contact_ids || contact_ids.length === 0) {
       return NextResponse.json(
@@ -27,7 +68,21 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Get campaign and first step
+    // Get campaign and its settings
+    const { data: campaign } = await supabase
+      .from("lp_campaigns")
+      .select("*, settings")
+      .eq("id", campaign_id)
+      .single();
+
+    if (!campaign) {
+      return NextResponse.json(
+        { success: false, error: "Campaign not found" },
+        { status: 404 }
+      );
+    }
+
+    // Get first step
     const { data: steps } = await supabase
       .from("lp_sequence_steps")
       .select("*")
@@ -57,28 +112,100 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    let sentCount = 0;
-    const errors: string[] = [];
+    // Check if this is a scheduled send
+    if (schedule_send_at) {
+      const scheduleTime = new Date(schedule_send_at);
+      
+      // Create campaign_contacts entries with scheduled time
+      for (const contact of contacts) {
+        // Check if already in campaign
+        const { data: existing } = await supabase
+          .from("lp_campaign_contacts")
+          .select("id")
+          .eq("campaign_id", campaign_id)
+          .eq("contact_id", contact.id)
+          .single();
 
-    // Check if Resend API key is configured
+        if (!existing) {
+          await supabase.from("lp_campaign_contacts").insert([{
+            campaign_id,
+            contact_id: contact.id,
+            status: "pending",
+            current_step: 0,
+            next_send_at: scheduleTime.toISOString(),
+          }]);
+        }
+      }
+
+      // Activate campaign
+      await supabase
+        .from("lp_campaigns")
+        .update({ status: "active" })
+        .eq("id", campaign_id);
+
+      return NextResponse.json({
+        success: true,
+        scheduled: true,
+        scheduled_at: schedule_send_at,
+        contacts_queued: contacts.length,
+        message: "Emails scheduled. They will be sent by the cron job.",
+      });
+    }
+
+    let sentCount = 0;
+    let skippedCount = 0;
+    const errors: string[] = [];
+    const verificationResults: { email: string; status: string }[] = [];
+
     const resendKey = process.env.RESEND_API_KEY;
     const fromEmail = process.env.FROM_EMAIL || "onboarding@resend.dev";
+    const baseUrl = process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000";
 
     for (const contact of contacts) {
+      // Verify email if enabled and not already verified
+      if (verify_emails && !contact.email_verified) {
+        const verifyResult = await verifyEmail(contact.email);
+        verificationResults.push({ email: contact.email, status: verifyResult.status });
+
+        // Update contact verification status
+        await supabase
+          .from("lp_contacts")
+          .update({
+            email_verified: verifyResult.valid,
+            email_verification_status: verifyResult.status,
+          })
+          .eq("id", contact.id);
+
+        // Skip invalid emails
+        if (!verifyResult.valid) {
+          skippedCount++;
+          errors.push(`${contact.email}: Skipped (${verifyResult.status})`);
+          continue;
+        }
+      } else if (contact.email_verification_status === "invalid" || 
+                 contact.email_verification_status === "disposable") {
+        // Already known to be invalid
+        skippedCount++;
+        continue;
+      }
+
       const subject = personalize(firstStep.subject, contact);
       const body = personalize(firstStep.body, contact);
 
       // Generate tracking pixel URL
       const trackingId = crypto.randomUUID();
-      const trackingPixel = `${process.env.NEXT_PUBLIC_APP_URL}/api/track/open?id=${trackingId}`;
+      const trackingPixel = `${baseUrl}/api/track/open?id=${trackingId}`;
 
       // Add tracking pixel to HTML body
-      const htmlBody = `
+      let htmlBody = `
         <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; line-height: 1.6;">
           ${body.split("\n").map((line) => `<p style="margin: 0 0 10px 0;">${line}</p>`).join("")}
           <img src="${trackingPixel}" width="1" height="1" style="display:none;" alt="" />
         </div>
       `;
+
+      // Rewrite links for click tracking
+      htmlBody = rewriteLinksForTracking(htmlBody, trackingId, baseUrl);
 
       if (resendKey) {
         // Send via Resend
@@ -107,7 +234,40 @@ export async function POST(request: NextRequest) {
               subject: subject,
               status: "sent",
               tracking_id: trackingId,
+              sequence_step: 1,
+              message_id: result.id,
             }]);
+
+            // Add to campaign_contacts for sequence tracking
+            const { data: existing } = await supabase
+              .from("lp_campaign_contacts")
+              .select("id")
+              .eq("campaign_id", campaign_id)
+              .eq("contact_id", contact.id)
+              .single();
+
+            if (!existing) {
+              // Check for step 2
+              const { data: nextStep } = await supabase
+                .from("lp_sequence_steps")
+                .select("delay_days, delay_hours")
+                .eq("campaign_id", campaign_id)
+                .eq("step_number", 2)
+                .single();
+
+              const nextSendAt = nextStep 
+                ? new Date(Date.now() + ((nextStep.delay_days || 0) * 24 * 60 + (nextStep.delay_hours || 0) * 60) * 60 * 1000).toISOString()
+                : null;
+
+              await supabase.from("lp_campaign_contacts").insert([{
+                campaign_id,
+                contact_id: contact.id,
+                status: nextStep ? "in_progress" : "completed",
+                current_step: 1,
+                next_send_at: nextSendAt,
+                completed_at: nextStep ? null : new Date().toISOString(),
+              }]);
+            }
 
             // Update contact status
             await supabase
@@ -130,7 +290,37 @@ export async function POST(request: NextRequest) {
           subject: subject,
           status: "demo",
           tracking_id: trackingId,
+          sequence_step: 1,
         }]);
+
+        // Add to campaign_contacts
+        const { data: existing } = await supabase
+          .from("lp_campaign_contacts")
+          .select("id")
+          .eq("campaign_id", campaign_id)
+          .eq("contact_id", contact.id)
+          .single();
+
+        if (!existing) {
+          const { data: nextStep } = await supabase
+            .from("lp_sequence_steps")
+            .select("delay_days, delay_hours")
+            .eq("campaign_id", campaign_id)
+            .eq("step_number", 2)
+            .single();
+
+          const nextSendAt = nextStep 
+            ? new Date(Date.now() + ((nextStep.delay_days || 0) * 24 * 60 + (nextStep.delay_hours || 0) * 60) * 60 * 1000).toISOString()
+            : null;
+
+          await supabase.from("lp_campaign_contacts").insert([{
+            campaign_id,
+            contact_id: contact.id,
+            status: nextStep ? "in_progress" : "completed",
+            current_step: 1,
+            next_send_at: nextSendAt,
+          }]);
+        }
 
         await supabase
           .from("lp_contacts")
@@ -139,13 +329,24 @@ export async function POST(request: NextRequest) {
 
         sentCount++;
       }
+
+      // Rate limit between sends
+      await new Promise((r) => setTimeout(r, 100));
     }
+
+    // Activate campaign
+    await supabase
+      .from("lp_campaigns")
+      .update({ status: "active" })
+      .eq("id", campaign_id);
 
     return NextResponse.json({
       success: true,
       sent: sentCount,
+      skipped: skippedCount,
       total: contacts.length,
       errors: errors.length > 0 ? errors : undefined,
+      verification: verificationResults.length > 0 ? verificationResults : undefined,
       demo: !resendKey,
     });
   } catch (error: any) {

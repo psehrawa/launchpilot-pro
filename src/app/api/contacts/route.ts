@@ -69,7 +69,7 @@ export async function POST(request: NextRequest) {
 
     const contact = {
       org_id: org.id,
-      email: body.email,
+      email: body.email || null,
       first_name: body.firstName || body.first_name,
       last_name: body.lastName || body.last_name,
       company: body.company,
@@ -77,6 +77,8 @@ export async function POST(request: NextRequest) {
       status: body.status || "new",
       tags: body.tags || [],
       email_verified: body.email_verified || false,
+      linkedin_url: body.linkedin_url || null,
+      source: body.source || "manual",
     };
 
     const { data, error } = await supabase

@@ -1,0 +1,202 @@
+[
+  {
+    "company": "Aqua Pool Service",
+    "domain": "aquapoolservicetx.com",
+    "city": "Dallas",
+    "state": "TX",
+    "email": null,
+    "confidence": 0
+  },
+  {
+    "company": "Blue Wave Pools",
+    "domain": "bluewavepools.com",
+    "city": "Houston",
+    "state": "TX",
+    "email": null,
+    "confidence": 0
+  },
+  {
+    "company": "Crystal Clear Pools",
+    "domain": "crystalclearpoolstx.com",
+    "city": "San Antonio",
+    "state": "TX",
+    "email": null,
+    "confidence": 0
+  },
+  {
+    "company": "Premier Pool Service",
+    "domain": "premierpoolservice.com",
+    "city": "Austin",
+    "state": "TX",
+    "email": null,
+    "confidence": 0
+  },
+  {
+    "company": "Texas Pool Techs",
+    "domain": "texaspooltechs.com",
+    "city": "Dallas",
+    "state": "TX",
+    "email": null,
+    "confidence": 0
+  },
+  {
+    "company": "Splash Pool Service",
+    "domain": "splashpoolserviceaz.com",
+    "city": "Phoenix",
+    "state": "AZ",
+    "email": null,
+    "confidence": 0
+  },
+  {
+    "company": "Desert Oasis Pools",
+    "domain": "desertoasispools.com",
+    "city": "Scottsdale",
+    "state": "AZ",
+    "email": null,
+    "confidence": 0
+  },
+  {
+    "company": "Arizona Pool Pros",
+    "domain": "arizonapoolpros.com",
+    "city": "Mesa",
+    "state": "AZ",
+    "email": null,
+    "confidence": 0
+  },
+  {
+    "company": "Valley Pool Service",
+    "domain": "valleypoolservice.com",
+    "city": "Gilbert",
+    "state": "AZ",
+    "email": null,
+    "confidence": 0
+  },
+  {
+    "company": "Sun City Pools",
+    "domain": "suncitypools.com",
+    "city": "Peoria",
+    "state": "AZ",
+    "email": null,
+    "confidence": 0
+  },
+  {
+    "company": "Paradise Pool Care",
+    "domain": "paradisepoolcare.com",
+    "city": "Tampa",
+    "state": "FL",
+    "email": null,
+    "confidence": 0
+  },
+  {
+    "company": "Gulf Coast Pools",
+    "domain": "gulfcoastpools.com",
+    "city": "Sarasota",
+    "state": "FL",
+    "email": null,
+    "confidence": 0
+  },
+  {
+    "company": "Sunshine State Pools",
+    "domain": "sunshinestatepools.com",
+    "city": "Jacksonville",
+    "state": "FL",
+    "email": null,
+    "confidence": 0
+  },
+  {
+    "company": "Florida Pool Masters",
+    "domain": "floridapoolmasters.com",
+    "city": "Naples",
+    "state": "FL",
+    "email": null,
+    "confidence": 0
+  },
+  {
+    "company": "Keys Pool Service",
+    "domain": "keyspoolservice.com",
+    "city": "Key West",
+    "state": "FL",
+    "email": "service@keyspoolservice.com",
+    "confidence": 78
+  },
+  {
+    "company": "Palm Beach Pools",
+    "domain": "palmbeachpools.com",
+    "city": "Boca Raton",
+    "state": "FL",
+    "email": null,
+    "confidence": 0
+  },
+  {
+    "company": "Emerald Coast Pools",
+    "domain": "emeraldcoastpools.com",
+    "city": "Pensacola",
+    "state": "FL",
+    "email": null,
+    "confidence": 0
+  },
+  {
+    "company": "Space Coast Pools",
+    "domain": "spacecoastpools.com",
+    "city": "Melbourne",
+    "state": "FL",
+    "email": null,
+    "confidence": 0
+  },
+  {
+    "company": "Treasure Coast Pools",
+    "domain": "treasurecoastpools.com",
+    "city": "Stuart",
+    "state": "FL",
+    "email": null,
+    "confidence": 0
+  },
+  {
+    "company": "Central Florida Pools",
+    "domain": "centralfloridapools.com",
+    "city": "Lakeland",
+    "state": "FL",
+    "email": "contact@centralfloridapools.com",
+    "confidence": 95
+  },
+  {
+    "company": "SoCal Pool Pros",
+    "domain": "socalpoolpros.com",
+    "city": "Los Angeles",
+    "state": "CA",
+    "email": null,
+    "confidence": 0
+  },
+  {
+    "company": "Bay Area Pool Service",
+    "domain": "bayareapoolservice.com",
+    "city": "San Jose",
+    "state": "CA",
+    "email": null,
+    "confidence": 0
+  },
+  {
+    "company": "San Diego Pool Care",
+    "domain": "sandiegopoolcare.com",
+    "city": "San Diego",
+    "state": "CA",
+    "email": null,
+    "confidence": 0
+  },
+  {
+    "company": "Sacramento Pool Service",
+    "domain": "sacramentopoolservice.com",
+    "city": "Sacramento",
+    "state": "CA",
+    "email": null,
+    "confidence": 0
+  },
+  {
+    "company": "Orange County Pools",
+    "domain": "orangecountypools.com",
+    "city": "Irvine",
+    "state": "CA",
+    "email": "dan@orangecountypools.com",
+    "confidence": 99
+  }
+]

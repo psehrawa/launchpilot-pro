@@ -84,6 +84,7 @@ export default function ContactsPage() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isEnriching, setIsEnriching] = useState(false);
   const [isBulkEnriching, setIsBulkEnriching] = useState(false);
+  const [isVerifying, setIsVerifying] = useState(false);
   const [importPreview, setImportPreview] = useState<Partial<Contact>[]>([]);
   const [autoEnrich, setAutoEnrich] = useState(true);
   
@@ -209,6 +210,65 @@ export default function ContactsPage() {
       setSelectedContacts([]);
     } else {
       toast({ title: "Error", description: result.error, variant: "destructive" });
+    }
+  };
+
+  const handleVerifyEmails = async () => {
+    if (selectedContacts.length === 0) return;
+    
+    setIsVerifying(true);
+    toast({ title: "Verifying emails...", description: `Checking ${selectedContacts.length} emails` });
+    
+    try {
+      const res = await fetch("/api/verify-email", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ contact_ids: selectedContacts }),
+      });
+      
+      const data = await res.json();
+      
+      if (data.success) {
+        toast({ 
+          title: "Verification complete", 
+          description: `${data.valid} valid, ${data.invalid} invalid` 
+        });
+        refresh();
+        setSelectedContacts([]);
+      } else {
+        toast({ title: "Error", description: data.error, variant: "destructive" });
+      }
+    } catch (err) {
+      toast({ title: "Error", description: "Failed to verify emails", variant: "destructive" });
+    } finally {
+      setIsVerifying(false);
+    }
+  };
+
+  const handleVerifySingleEmail = async (contactId: string, email: string) => {
+    toast({ title: "Verifying...", description: email });
+    
+    try {
+      const res = await fetch("/api/verify-email", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email, contact_id: contactId }),
+      });
+      
+      const data = await res.json();
+      
+      if (data.success) {
+        toast({ 
+          title: data.valid ? "Valid email" : "Invalid email", 
+          description: `Status: ${data.status}`,
+          variant: data.valid ? "default" : "destructive",
+        });
+        refresh();
+      } else {
+        toast({ title: "Error", description: data.error, variant: "destructive" });
+      }
+    } catch (err) {
+      toast({ title: "Error", description: "Failed to verify email", variant: "destructive" });
     }
   };
 
@@ -589,6 +649,10 @@ export default function ContactsPage() {
             {selectedContacts.length} contact(s) selected
           </span>
           <div className="flex gap-2">
+            <Button size="sm" variant="outline" onClick={handleVerifyEmails} disabled={isVerifying}>
+              {isVerifying ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <CheckCircle2 className="h-4 w-4 mr-2" />}
+              Verify Emails
+            </Button>
             <Button size="sm" variant="outline" onClick={handleBulkEnrich} disabled={isBulkEnriching}>
               {isBulkEnriching ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Sparkles className="h-4 w-4 mr-2" />}
               Find Emails
@@ -666,12 +730,24 @@ export default function ContactsPage() {
                     {contact.email_verified ? (
                       <div className="flex items-center gap-1 text-green-600">
                         <CheckCircle2 className="h-4 w-4" />
-                        <span className="text-sm">Verified</span>
+                        <span className="text-sm">
+                          {contact.email_verification_status === "catchall" ? "Catch-all" : "Valid"}
+                        </span>
+                      </div>
+                    ) : contact.email_verification_status === "invalid" ? (
+                      <div className="flex items-center gap-1 text-red-600">
+                        <XCircle className="h-4 w-4" />
+                        <span className="text-sm">Invalid</span>
+                      </div>
+                    ) : contact.email_verification_status === "disposable" ? (
+                      <div className="flex items-center gap-1 text-orange-600">
+                        <AlertCircle className="h-4 w-4" />
+                        <span className="text-sm">Disposable</span>
                       </div>
                     ) : (
                       <div className="flex items-center gap-1 text-slate-400">
                         <Clock className="h-4 w-4" />
-                        <span className="text-sm">Pending</span>
+                        <span className="text-sm">Unverified</span>
                       </div>
                     )}
                   </TableCell>
@@ -699,6 +775,12 @@ export default function ContactsPage() {
                         <DropdownMenuItem>
                           <UserPlus className="h-4 w-4 mr-2" />
                           Add to Campaign
+                        </DropdownMenuItem>
+                        <DropdownMenuItem
+                          onClick={() => handleVerifySingleEmail(contact.id, contact.email)}
+                        >
+                          <CheckCircle2 className="h-4 w-4 mr-2" />
+                          Verify Email
                         </DropdownMenuItem>
                         <DropdownMenuSeparator />
                         <DropdownMenuItem

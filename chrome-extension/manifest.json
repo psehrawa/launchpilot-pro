@@ -1,0 +1,18 @@
+{
+  "manifest_version": 3,
+  "name": "LaunchPilot Pro - Lead Capture",
+  "version": "1.0.0",
+  "description": "Capture leads from LinkedIn with one click",
+  "permissions": ["activeTab", "storage"],
+  "host_permissions": ["https://www.linkedin.com/*"],
+  "action": {
+    "default_popup": "popup.html"
+  },
+  "content_scripts": [
+    {
+      "matches": ["https://www.linkedin.com/*"],
+      "js": ["content.js"],
+      "css": ["content.css"]
+    }
+  ]
+}
